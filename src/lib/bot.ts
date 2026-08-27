@@ -41,7 +41,7 @@ function mainMenu() {
 }
 
 function bookingKeyboard(booking: BookingRow) {
-  if (booking.status === "cancelled") return new InlineKeyboard().text("Вернуть", `booking:confirm:${booking.id}`);
+  if (booking.status === "cancelled") return new InlineKeyboard().text("Вернуть", `booking:restore:${booking.id}`);
   if (booking.status === "confirmed") return new InlineKeyboard().text("Отменить", `booking:cancel-ask:${booking.id}`);
   return new InlineKeyboard().text("Подтвердить", `booking:confirm:${booking.id}`).text("Отменить", `booking:cancel-ask:${booking.id}`);
 }
@@ -199,13 +199,14 @@ async function sendNextBooking(ctx: Context) {
   await ctx.reply(`Следующая запись\n\n${formatBookingDetails(booking)}`, { reply_markup: new InlineKeyboard().text("Отменить запись", `booking:cancel-ask:${booking.id}`).row().text("Назад к меню", "menu:main") });
 }
 
-async function handleBookingAction(ctx: Context, action: "confirm" | "cancel", bookingId: string) {
+async function handleBookingAction(ctx: Context, action: "confirm" | "restore" | "cancel", bookingId: string) {
   const connection = await connectionFor(ctx);
   if (!connection) {
     await ctx.answerCallbackQuery({ text: "Telegram не подключён", show_alert: true });
     return;
   }
-  const status = action === "confirm" ? "confirmed" : "cancelled";
+  const status = action === "confirm" ? "confirmed" : action === "restore" ? "new" : "cancelled";
+  const allowedStatuses = action === "confirm" ? ["new"] : action === "restore" ? ["cancelled"] : ["new", "confirmed"];
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("bookings")
@@ -213,13 +214,14 @@ async function handleBookingAction(ctx: Context, action: "confirm" | "cancel", b
     .eq("id", bookingId)
     .eq("profile_id", connection.profile_id)
     .is("deleted_at", null)
+    .in("status", allowedStatuses)
     .select("id,reference,service_name,date,time,client_name,phone,comment,status")
     .maybeSingle();
   if (error || !data) {
     await ctx.answerCallbackQuery({ text: "Заявка уже изменена или не найдена", show_alert: true });
     return;
   }
-  await ctx.answerCallbackQuery({ text: status === "confirmed" ? "Заявка подтверждена" : "Заявка отменена" });
+  await ctx.answerCallbackQuery({ text: status === "confirmed" ? "Заявка подтверждена" : status === "new" ? "Заявка возвращена" : "Заявка отменена" });
   const booking = { ...(data as BookingRow), time: String(data.time).slice(0, 5) };
   await ctx.editMessageText(formatBookingDetails(booking), { reply_markup: bookingKeyboard(booking) });
 }
