@@ -164,7 +164,7 @@ async function listBookings(ctx: Context, days: number, status?: "new" | "confir
     await ctx.reply("Не удалось загрузить записи.");
     return;
   }
-  const rows = (data ?? []) as BookingRow[];
+  const rows = (data ?? []).map((row) => ({ ...row, time: String(row.time).slice(0, 5) })) as BookingRow[];
   if (!rows.length) { await ctx.reply("Записей нет.", { reply_markup: mainMenu() }); return; }
   const visibleRows = rows.slice(0, 8);
   await ctx.reply(rows.length > visibleRows.length ? `Записей: ${rows.length}. Показываю ближайшие ${visibleRows.length}; остальные доступны на сайте.` : `Записи: ${rows.length}. Нажмите кнопку под заявкой для изменения статуса.`, { reply_markup: mainMenu() });
@@ -186,7 +186,7 @@ async function sendNextBooking(ctx: Context) {
   if (!connection) return ctx.reply("Сначала подключите Telegram в профиле специалиста Slotly.", { reply_markup: mainMenu() });
   const { data } = await getSupabaseAdmin().from("bookings").select("id,reference,service_name,date,time,client_name,phone,comment,status").eq("profile_id", connection.profile_id).is("deleted_at", null).neq("status", "cancelled").gte("date", dateKey()).order("date").order("time").limit(1).maybeSingle();
   if (!data) return ctx.reply("Ближайших записей нет.", { reply_markup: mainMenu() });
-  const booking = data as BookingRow;
+  const booking = { ...(data as BookingRow), time: String(data.time).slice(0, 5) };
   await ctx.reply(`Следующая запись\n\n${formatBookingDetails(booking)}`, { reply_markup: bookingKeyboard(booking) });
 }
 
@@ -211,7 +211,7 @@ async function handleBookingAction(ctx: Context, action: "confirm" | "cancel", b
     return;
   }
   await ctx.answerCallbackQuery({ text: status === "confirmed" ? "Заявка подтверждена" : "Заявка отменена" });
-  const booking = data as BookingRow;
+  const booking = { ...(data as BookingRow), time: String(data.time).slice(0, 5) };
   await ctx.editMessageText(formatBookingDetails(booking), { reply_markup: bookingKeyboard(booking) });
 }
 
