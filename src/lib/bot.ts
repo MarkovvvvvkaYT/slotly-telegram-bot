@@ -166,8 +166,9 @@ async function listBookings(ctx: Context, days: number, status?: "new" | "confir
   }
   const rows = (data ?? []) as BookingRow[];
   if (!rows.length) { await ctx.reply("Записей нет.", { reply_markup: mainMenu() }); return; }
-  await ctx.reply(`Записи: ${rows.length}. Нажмите кнопку под заявкой для изменения статуса.`, { reply_markup: mainMenu() });
-  for (const booking of rows) await ctx.reply(formatBookingDetails(booking), { reply_markup: bookingKeyboard(booking) });
+  const visibleRows = rows.slice(0, 8);
+  await ctx.reply(rows.length > visibleRows.length ? `Записей: ${rows.length}. Показываю ближайшие ${visibleRows.length}; остальные доступны на сайте.` : `Записи: ${rows.length}. Нажмите кнопку под заявкой для изменения статуса.`, { reply_markup: mainMenu() });
+  for (const booking of visibleRows) await ctx.reply(formatBookingDetails(booking), { reply_markup: bookingKeyboard(booking) });
 }
 
 async function sendStats(ctx: Context) {
