@@ -1,4 +1,4 @@
-import { formatBookingMessage, parseStartPayload, parseAccountAction, parseBookingAction, telegramUpdateId } from "./telegram-text";
+import { formatBookingMessage, parseStartPayload, parseAccountAction, parseBookingAction, parseMenuAction, telegramUpdateId } from "./telegram-text";
 
 describe("Telegram bot payloads", () => {
   it("formats booking notification with action context", () => {
@@ -37,6 +37,12 @@ describe("Telegram bot payloads", () => {
     expect(parseBookingAction("booking:cancel:booking-1")).toEqual({ action: "cancel", bookingId: "booking-1" });
     expect(parseBookingAction("booking:confirm:")).toBeNull();
     expect(parseBookingAction("other:confirm:booking-1")).toBeNull();
+  });
+
+  it("parses known menu views", () => {
+    expect(parseMenuAction("menu:today")).toEqual({ view: "today" });
+    expect(parseMenuAction("menu:main")).toEqual({ view: "main" });
+    expect(parseMenuAction("menu:unknown")).toBeNull();
   });
 
   it("extracts a safe Telegram update id for deduplication", () => {

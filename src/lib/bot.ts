@@ -1,7 +1,7 @@
 import { Bot, Context, InlineKeyboard, Keyboard } from "grammy";
 import { getSupabaseAdmin } from "./supabase";
 import { hashChallengeToken, isChallengeExpired } from "./telegram-challenges";
-import { parseAccountAction, parseBookingAction, parseStartPayload, telegramUpdateId } from "./telegram-text";
+import { parseAccountAction, parseBookingAction, parseMenuAction, parseStartPayload, telegramUpdateId } from "./telegram-text";
 
 type Connection = { id: string; profile_id: string; telegram_user_id: number; chat_id: number };
 type BookingRow = {
@@ -44,6 +44,14 @@ function bookingKeyboard(booking: BookingRow) {
   if (booking.status === "cancelled") return new InlineKeyboard().text("Вернуть", `booking:confirm:${booking.id}`);
   if (booking.status === "confirmed") return new InlineKeyboard().text("Отменить", `booking:cancel:${booking.id}`);
   return new InlineKeyboard().text("Подтвердить", `booking:confirm:${booking.id}`).text("Отменить", `booking:cancel:${booking.id}`);
+}
+
+function contextKeyboard() {
+  return new InlineKeyboard()
+    .text("Сегодня", "menu:today").text("Неделя", "menu:week").row()
+    .text("Новые", "menu:new").text("Подтверждённые", "menu:confirmed").row()
+    .text("Все записи", "menu:all").text("Статистика", "menu:stats").row()
+    .text("Главное меню", "menu:main");
 }
 
 function formatBookingDetails(booking: BookingRow) {
@@ -167,7 +175,7 @@ async function listBookings(ctx: Context, days: number, status?: "new" | "confir
   const rows = (data ?? []).map((row) => ({ ...row, time: String(row.time).slice(0, 5) })) as BookingRow[];
   if (!rows.length) { await ctx.reply("Записей нет.", { reply_markup: mainMenu() }); return; }
   const visibleRows = rows.slice(0, 8);
-  await ctx.reply(rows.length > visibleRows.length ? `Записей: ${rows.length}. Показываю ближайшие ${visibleRows.length}; остальные доступны на сайте.` : `Записи: ${rows.length}. Нажмите кнопку под заявкой для изменения статуса.`, { reply_markup: mainMenu() });
+  await ctx.reply(rows.length > visibleRows.length ? `Записей: ${rows.length}. Показываю ближайшие ${visibleRows.length}; остальные доступны на сайте.` : `Записи: ${rows.length}. Нажмите кнопку под заявкой для изменения статуса.`, { reply_markup: contextKeyboard() });
   for (const booking of visibleRows) await ctx.reply(formatBookingDetails(booking), { reply_markup: bookingKeyboard(booking) });
 }
 
@@ -185,7 +193,7 @@ async function sendNextBooking(ctx: Context) {
   const connection = await connectionFor(ctx);
   if (!connection) return ctx.reply("Сначала подключите Telegram в профиле специалиста Slotly.", { reply_markup: mainMenu() });
   const { data } = await getSupabaseAdmin().from("bookings").select("id,reference,service_name,date,time,client_name,phone,comment,status").eq("profile_id", connection.profile_id).is("deleted_at", null).neq("status", "cancelled").gte("date", dateKey()).order("date").order("time").limit(1).maybeSingle();
-  if (!data) return ctx.reply("Ближайших записей нет.", { reply_markup: mainMenu() });
+  if (!data) return ctx.reply("Ближайших записей нет.", { reply_markup: contextKeyboard() });
   const booking = { ...(data as BookingRow), time: String(data.time).slice(0, 5) };
   await ctx.reply(`Следующая запись\n\n${formatBookingDetails(booking)}`, { reply_markup: bookingKeyboard(booking) });
 }
@@ -230,9 +238,9 @@ async function sendProfile(ctx: Context) {
   const connection = await connectionFor(ctx);
   if (!connection) return ctx.reply("Сначала подключите Telegram в профиле специалиста Slotly.");
   const { data } = await getSupabaseAdmin().from("profiles").select("name,slug,is_published").eq("id", connection.profile_id).maybeSingle();
-  if (!data) return ctx.reply("Профиль не найден.");
+  if (!data) return ctx.reply("Профиль не найден.", { reply_markup: contextKeyboard() });
   const siteUrl = process.env.SITE_URL?.replace(/\/$/, "") ?? "https://slotly-online.vercel.app";
-  return ctx.reply(`${data.name}\nПрофиль: ${siteUrl}/p/${data.slug}\nСтатус: ${data.is_published ? "опубликован" : "скрыт"}`);
+  return ctx.reply(`${data.name}\nПрофиль: ${siteUrl}/p/${data.slug}\nСтатус: ${data.is_published ? "опубликован" : "скрыт"}`, { reply_markup: contextKeyboard() });
 }
 
 function registerHandlers(bot: Bot<Context>) {
@@ -266,6 +274,17 @@ function registerHandlers(bot: Bot<Context>) {
   bot.on("callback_query:data", async (ctx) => {
     const accountAction = parseAccountAction(ctx.callbackQuery.data);
     if (accountAction) return handleAccountAction(ctx, accountAction.action, accountAction.challengeId);
+    const menuAction = parseMenuAction(ctx.callbackQuery.data);
+    if (menuAction) {
+      await ctx.answerCallbackQuery();
+      if (menuAction.view === "main") return ctx.reply("Выберите действие:", { reply_markup: mainMenu() });
+      if (menuAction.view === "stats") return sendStats(ctx);
+      if (menuAction.view === "next") return sendNextBooking(ctx);
+      if (menuAction.view === "profile") return sendProfile(ctx);
+      const views = { today: [1], week: [7], new: [30, "new"], confirmed: [30, "confirmed"], cancelled: [30, "cancelled"], all: [30] } as const;
+      const view = views[menuAction.view as keyof typeof views];
+      if (view) return listBookings(ctx, view[0], view[1] as "new" | "confirmed" | "cancelled" | undefined);
+    }
     const parsed = parseBookingAction(ctx.callbackQuery.data);
     if (!parsed) return ctx.answerCallbackQuery({ text: "Неизвестное действие", show_alert: true });
     await handleBookingAction(ctx, parsed.action, parsed.bookingId);

@@ -46,6 +46,13 @@ export function parseBookingAction(data: string | undefined) {
   return { action: match[1] as "confirm" | "cancel", bookingId: match[2] };
 }
 
+export function parseMenuAction(data: string | undefined) {
+  if (!data) return null;
+  const match = /^menu:(main|today|week|new|confirmed|cancelled|all|stats|next|profile)$/.exec(data);
+  if (!match) return null;
+  return { view: match[1] as "main" | "today" | "week" | "new" | "confirmed" | "cancelled" | "all" | "stats" | "next" | "profile" };
+}
+
 export function telegramUpdateId(update: unknown) {
   if (!update || typeof update !== "object" || !Number.isInteger((update as { update_id?: unknown }).update_id)) return null;
   const id = (update as { update_id: number }).update_id;
