@@ -4,7 +4,7 @@ let adminClient: SupabaseClient | null = null;
 
 export function getSupabaseAdmin() {
   const url = process.env.SUPABASE_URL;
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim().replace(/^Bearer\s+/i, "");
   if (!url || !serviceRoleKey) throw new Error("Supabase service role is not configured");
   const isSecretKey = serviceRoleKey.startsWith("sb_secret_");
   adminClient ??= createClient(url, serviceRoleKey, {
