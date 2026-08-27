@@ -1,7 +1,7 @@
 import { Bot, Context } from "grammy";
 import { getSupabaseAdmin } from "./supabase";
 import { hashChallengeToken, isChallengeExpired } from "./telegram-challenges";
-import { parseBookingAction, parseStartPayload } from "./telegram-text";
+import { parseBookingAction, parseStartPayload, telegramUpdateId } from "./telegram-text";
 
 type Connection = { id: string; profile_id: string; telegram_user_id: number; chat_id: number };
 type BookingRow = {
@@ -184,4 +184,15 @@ export function getBot() {
   botInstance = new Bot(token);
   registerHandlers(botInstance);
   return botInstance;
+}
+
+export async function handleUpdate(update: unknown) {
+  const updateId = telegramUpdateId(update);
+  if (updateId !== null) {
+    const { error } = await getSupabaseAdmin().from("telegram_updates").insert({ update_id: updateId });
+    if (error?.code === "23505") return { duplicate: true } as const;
+    if (error) throw error;
+  }
+  await getBot().handleUpdate(update as Parameters<Bot<Context>["handleUpdate"]>[0]);
+  return { duplicate: false } as const;
 }

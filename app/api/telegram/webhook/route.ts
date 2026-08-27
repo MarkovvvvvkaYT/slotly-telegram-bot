@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getBot } from "@/src/lib/bot";
+import { handleUpdate } from "@/src/lib/bot";
 
 export const runtime = "nodejs";
 
@@ -9,7 +9,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   try {
-    await getBot().handleUpdate(await request.json());
+    await handleUpdate(await request.json());
     return new NextResponse(null, { status: 200 });
   } catch (error) {
     console.error("Telegram webhook failed", error);

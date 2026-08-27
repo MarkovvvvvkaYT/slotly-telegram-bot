@@ -38,3 +38,9 @@ export function parseBookingAction(data: string | undefined) {
   if (!match) return null;
   return { action: match[1] as "confirm" | "cancel", bookingId: match[2] };
 }
+
+export function telegramUpdateId(update: unknown) {
+  if (!update || typeof update !== "object" || !Number.isInteger((update as { update_id?: unknown }).update_id)) return null;
+  const id = (update as { update_id: number }).update_id;
+  return id >= 0 ? id : null;
+}
