@@ -71,7 +71,7 @@ async function sendStart(ctx: Context, payload: string | undefined) {
   const supabase = getSupabaseAdmin();
   if (!parsed) {
     const connection = await connectionFor(ctx);
-    await ctx.reply(connection ? "Telegram подключён к Slotly. Используйте /today или /week." : "Эта команда доступна после привязки Telegram в кабинете специалиста Slotly.");
+    await ctx.reply(connection ? "Slotly подключён. Выберите действие — бот покажет только актуальное." : "Сначала подключите Telegram в профиле специалиста Slotly.", { reply_markup: connection ? mainMenu() : undefined });
     return;
   }
 
@@ -104,7 +104,7 @@ async function sendStart(ctx: Context, payload: string | undefined) {
       return;
     }
     await supabase.from("telegram_link_challenges").update({ consumed_at: new Date().toISOString() }).eq("id", challenge.id).is("consumed_at", null);
-    await ctx.reply("Telegram подключён к Slotly. Теперь заявки будут приходить сюда.");
+    await ctx.reply("Telegram подключён. Новые заявки придут сюда, а меню поможет управлять днём без сайта.", { reply_markup: mainMenu() });
     return;
   }
 
@@ -203,15 +203,15 @@ async function handleBookingAction(ctx: Context, action: "confirm" | "cancel", b
     .eq("id", bookingId)
     .eq("profile_id", connection.profile_id)
     .is("deleted_at", null)
-    .select("id,status")
+    .select("id,reference,service_name,date,time,client_name,phone,comment,status")
     .maybeSingle();
   if (error || !data) {
     await ctx.answerCallbackQuery({ text: "Заявка уже изменена или не найдена", show_alert: true });
     return;
   }
   await ctx.answerCallbackQuery({ text: status === "confirmed" ? "Заявка подтверждена" : "Заявка отменена" });
-  await ctx.editMessageReplyMarkup({ reply_markup: bookingKeyboard({ id: bookingId, reference: "", service_name: "", date: "", time: "", client_name: "", phone: "", comment: null, status }) });
-  await ctx.reply(status === "confirmed" ? "Заявка подтверждена." : "Заявка отменена.");
+  const booking = data as BookingRow;
+  await ctx.editMessageText(formatBookingDetails(booking), { reply_markup: bookingKeyboard(booking) });
 }
 
 async function handleAccountAction(ctx: Context, action: "approve" | "cancel", challengeId: string) {
@@ -230,12 +230,12 @@ async function sendProfile(ctx: Context) {
   if (!connection) return ctx.reply("Сначала подключите Telegram в профиле специалиста Slotly.");
   const { data } = await getSupabaseAdmin().from("profiles").select("name,slug,is_published").eq("id", connection.profile_id).maybeSingle();
   if (!data) return ctx.reply("Профиль не найден.");
-  const siteUrl = process.env.SITE_URL?.replace(/\/$/, "") ?? "https://vremya-est.vercel.app";
+  const siteUrl = process.env.SITE_URL?.replace(/\/$/, "") ?? "https://slotly-online.vercel.app";
   return ctx.reply(`${data.name}\nПрофиль: ${siteUrl}/p/${data.slug}\nСтатус: ${data.is_published ? "опубликован" : "скрыт"}`);
 }
 
 function registerHandlers(bot: Bot<Context>) {
-  bot.command("start", async (ctx) => { await sendStart(ctx, ctx.match); await ctx.reply("Меню специалиста открыто.", { reply_markup: mainMenu() }); });
+  bot.command("start", (ctx) => sendStart(ctx, ctx.match));
   bot.command("today", (ctx) => listBookings(ctx, 1));
   bot.command("week", (ctx) => listBookings(ctx, 7));
   bot.command("upcoming", (ctx) => listBookings(ctx, 30));
