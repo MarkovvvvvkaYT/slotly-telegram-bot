@@ -1,4 +1,4 @@
-import { formatBookingMessage, parseStartPayload, parseBookingAction, telegramUpdateId } from "./telegram-text";
+import { formatBookingMessage, parseStartPayload, parseAccountAction, parseBookingAction, telegramUpdateId } from "./telegram-text";
 
 describe("Telegram bot payloads", () => {
   it("formats booking notification with action context", () => {
@@ -21,8 +21,15 @@ describe("Telegram bot payloads", () => {
   it("parses only known deep-link payloads", () => {
     expect(parseStartPayload("link_token12345678901234567890")).toEqual({ type: "link", token: "token12345678901234567890" });
     expect(parseStartPayload("login_token12345678901234567890")).toEqual({ type: "login", token: "token12345678901234567890" });
+    expect(parseStartPayload("delete_token12345678901234567890")).toEqual({ type: "delete", token: "token12345678901234567890" });
     expect(parseStartPayload("link_")).toBeNull();
     expect(parseStartPayload("unknown_token")).toBeNull();
+  });
+
+  it("parses account deletion actions", () => {
+    expect(parseAccountAction("account:approve:challenge-1")).toEqual({ action: "approve", challengeId: "challenge-1" });
+    expect(parseAccountAction("account:cancel:challenge-1")).toEqual({ action: "cancel", challengeId: "challenge-1" });
+    expect(parseAccountAction("account:approve:")).toBeNull();
   });
 
   it("parses booking actions without accepting malformed callback data", () => {

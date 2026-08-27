@@ -1,7 +1,7 @@
-import { Bot, Context } from "grammy";
+import { Bot, Context, InlineKeyboard } from "grammy";
 import { getSupabaseAdmin } from "./supabase";
 import { hashChallengeToken, isChallengeExpired } from "./telegram-challenges";
-import { parseBookingAction, parseStartPayload, telegramUpdateId } from "./telegram-text";
+import { parseAccountAction, parseBookingAction, parseStartPayload, telegramUpdateId } from "./telegram-text";
 
 type Connection = { id: string; profile_id: string; telegram_user_id: number; chat_id: number };
 type BookingRow = {
@@ -94,6 +94,21 @@ async function sendStart(ctx: Context, payload: string | undefined) {
     return;
   }
 
+  if (parsed.type === "delete") {
+    const { data: challenge } = await supabase.from("telegram_account_delete_challenges").select("id,profile_id,expires_at").eq("token_hash", hashChallengeToken(parsed.token)).eq("status", "pending").maybeSingle();
+    if (!challenge || isChallengeExpired(String(challenge.expires_at))) {
+      await ctx.reply("Запрос удаления истёк. Создайте новый в кабинете Slotly.");
+      return;
+    }
+    const connection = await connectionFor(ctx);
+    if (!connection || connection.profile_id !== challenge.profile_id) {
+      await ctx.reply("Этот Telegram не привязан к профилю, который запрашивает удаление.");
+      return;
+    }
+    await ctx.reply("Удалить аккаунт Slotly? Профиль, услуги и заявки будут удалены без возможности восстановления.", { reply_markup: new InlineKeyboard().text("Удалить аккаунт", `account:approve:${challenge.id}`).text("Отмена", `account:cancel:${challenge.id}`) });
+    return;
+  }
+
   const { data: challenge } = await supabase
     .from("telegram_login_challenges")
     .select("id,profile_id,expires_at")
@@ -114,7 +129,7 @@ async function sendStart(ctx: Context, payload: string | undefined) {
   await ctx.reply("Вход в кабинет Slotly подтверждён. Вернитесь в браузер.");
 }
 
-async function listBookings(ctx: Context, days: number) {
+async function listBookings(ctx: Context, days: number, status?: "new" | "confirmed" | "cancelled") {
   const connection = await connectionFor(ctx);
   if (!connection) {
     await ctx.reply("Сначала подключите Telegram в профиле специалиста Slotly.");
@@ -122,15 +137,15 @@ async function listBookings(ctx: Context, days: number) {
   }
   const from = dateKey();
   const to = dateKey(addDays(new Date(), days - 1));
-  const { data, error } = await getSupabaseAdmin()
+  let query = getSupabaseAdmin()
     .from("bookings")
     .select("id,reference,service_name,date,time,client_name,phone,comment,status")
     .eq("profile_id", connection.profile_id)
     .is("deleted_at", null)
     .gte("date", from)
-    .lte("date", to)
-    .order("date")
-    .order("time");
+    .lte("date", to);
+  if (status) query = query.eq("status", status);
+  const { data, error } = await query.order("date").order("time");
   if (error) {
     await ctx.reply("Не удалось загрузить записи.");
     return;
@@ -162,16 +177,42 @@ async function handleBookingAction(ctx: Context, action: "confirm" | "cancel", b
   await ctx.reply(status === "confirmed" ? "Заявка подтверждена." : "Заявка отменена.");
 }
 
+async function handleAccountAction(ctx: Context, action: "approve" | "cancel", challengeId: string) {
+  const connection = await connectionFor(ctx);
+  if (!connection) return ctx.answerCallbackQuery({ text: "Telegram не подключён", show_alert: true });
+  const supabase = getSupabaseAdmin();
+  const nextStatus = action === "approve" ? "approved" : "rejected";
+  const { data } = await supabase.from("telegram_account_delete_challenges").update({ status: nextStatus, decided_at: new Date().toISOString(), telegram_connection_id: connection.id }).eq("id", challengeId).eq("profile_id", connection.profile_id).eq("status", "pending").select("id").maybeSingle();
+  if (!data) return ctx.answerCallbackQuery({ text: "Запрос уже обработан или истёк", show_alert: true });
+  await ctx.answerCallbackQuery({ text: action === "approve" ? "Удаление подтверждено" : "Удаление отменено" });
+  await ctx.editMessageText(action === "approve" ? "Удаление аккаунта подтверждено. Вернитесь на сайт." : "Удаление аккаунта отменено.");
+}
+
+async function sendProfile(ctx: Context) {
+  const connection = await connectionFor(ctx);
+  if (!connection) return ctx.reply("Сначала подключите Telegram в профиле специалиста Slotly.");
+  const { data } = await getSupabaseAdmin().from("profiles").select("name,slug,is_published").eq("id", connection.profile_id).maybeSingle();
+  if (!data) return ctx.reply("Профиль не найден.");
+  const siteUrl = process.env.SITE_URL?.replace(/\/$/, "") ?? "https://vremya-est.vercel.app";
+  return ctx.reply(`${data.name}\nПрофиль: ${siteUrl}/p/${data.slug}\nСтатус: ${data.is_published ? "опубликован" : "скрыт"}`);
+}
+
 function registerHandlers(bot: Bot<Context>) {
   bot.command("start", (ctx) => sendStart(ctx, ctx.match));
   bot.command("today", (ctx) => listBookings(ctx, 1));
   bot.command("week", (ctx) => listBookings(ctx, 7));
-  bot.command("help", (ctx) => ctx.reply("Команды: /today — записи сегодня; /week — записи на 7 дней; /help — помощь."));
+  bot.command("upcoming", (ctx) => listBookings(ctx, 30));
+  bot.command("new", (ctx) => listBookings(ctx, 30, "new"));
+  bot.command("confirmed", (ctx) => listBookings(ctx, 30, "confirmed"));
+  bot.command("profile", sendProfile);
+  bot.command("help", (ctx) => ctx.reply("Команды Slotly:\n/today — записи сегодня\n/week — ближайшие 7 дней\n/upcoming — ближайшие 30 дней\n/new — новые заявки\n/confirmed — подтверждённые\n/profile — ссылка и статус профиля\n/status — подключение Telegram"));
   bot.command("status", async (ctx) => {
     const connection = await connectionFor(ctx);
     await ctx.reply(connection ? "Telegram подключён к Slotly." : "Telegram не подключён.");
   });
   bot.on("callback_query:data", async (ctx) => {
+    const accountAction = parseAccountAction(ctx.callbackQuery.data);
+    if (accountAction) return handleAccountAction(ctx, accountAction.action, accountAction.challengeId);
     const parsed = parseBookingAction(ctx.callbackQuery.data);
     if (!parsed) return ctx.answerCallbackQuery({ text: "Неизвестное действие", show_alert: true });
     await handleBookingAction(ctx, parsed.action, parsed.bookingId);

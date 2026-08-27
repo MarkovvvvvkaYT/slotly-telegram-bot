@@ -27,9 +27,16 @@ export function formatBookingMessage(eventType: BookingEventType, booking: Booki
 
 export function parseStartPayload(payload: string | undefined) {
   if (!payload) return null;
-  const match = /^(link|login)_([A-Za-z0-9_-]{20,})$/.exec(payload);
+  const match = /^(link|login|delete)_([A-Za-z0-9_-]{20,})$/.exec(payload);
   if (!match) return null;
-  return { type: match[1] as "link" | "login", token: match[2] };
+  return { type: match[1] as "link" | "login" | "delete", token: match[2] };
+}
+
+export function parseAccountAction(data: string | undefined) {
+  if (!data) return null;
+  const match = /^account:(approve|cancel):([A-Za-z0-9-]{8,})$/.exec(data);
+  if (!match) return null;
+  return { action: match[1] as "approve" | "cancel", challengeId: match[2] };
 }
 
 export function parseBookingAction(data: string | undefined) {
