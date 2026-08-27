@@ -46,6 +46,22 @@ function bookingKeyboard(booking: BookingRow) {
   return new InlineKeyboard().text("Подтвердить", `booking:confirm:${booking.id}`).text("Отменить", `booking:cancel-ask:${booking.id}`);
 }
 
+function bookingListKeyboard(bookings: BookingRow[]) {
+  const keyboard = new InlineKeyboard();
+  for (const booking of bookings) {
+    if (booking.status === "cancelled") keyboard.text(`Вернуть · ${booking.time}`, `booking:restore:${booking.id}`);
+    else if (booking.status === "confirmed") keyboard.text(`Отменить · ${booking.time}`, `booking:cancel-ask:${booking.id}`);
+    else keyboard.text(`Подтвердить · ${booking.time}`, `booking:confirm:${booking.id}`).text(`Отменить · ${booking.time}`, `booking:cancel-ask:${booking.id}`);
+    keyboard.row();
+  }
+  return keyboard.text("Главное меню", "menu:main");
+}
+
+function formatCompactBooking(booking: BookingRow, index: number) {
+  const status = booking.status === "confirmed" ? "подтверждена" : booking.status === "cancelled" ? "отменена" : "новая";
+  return `${index}. ${booking.date.slice(5)} · ${booking.time} — ${booking.service_name}\n   ${booking.client_name} · ${status} · ${booking.reference}`;
+}
+
 function contextKeyboard() {
   return new InlineKeyboard()
     .text("Сегодня", "menu:today").text("Неделя", "menu:week").row()
@@ -176,8 +192,9 @@ async function listBookings(ctx: Context, days: number, status?: "new" | "confir
   const rows = (data ?? []).map((row) => ({ ...row, time: String(row.time).slice(0, 5) })) as BookingRow[];
   if (!rows.length) { await ctx.reply("Записей нет.", { reply_markup: mainMenu() }); return; }
   const visibleRows = rows.slice(0, 8);
-  await ctx.reply(rows.length > visibleRows.length ? `Записей: ${rows.length}. Показываю ближайшие ${visibleRows.length}; остальные доступны на сайте.` : `Записи: ${rows.length}. Нажмите кнопку под заявкой для изменения статуса.`, { reply_markup: contextKeyboard() });
-  for (const booking of visibleRows) await ctx.reply(formatBookingDetails(booking), { reply_markup: bookingKeyboard(booking) });
+  const header = rows.length > visibleRows.length ? `Записей: ${rows.length}. Показываю ближайшие ${visibleRows.length}.` : `Записей: ${rows.length}.`;
+  const text = [header, "", ...visibleRows.map(formatCompactBooking)].join("\n");
+  await ctx.reply(`${text}\n\nВыберите действие под нужной записью.`, { reply_markup: bookingListKeyboard(visibleRows) });
 }
 
 async function sendStats(ctx: Context) {
