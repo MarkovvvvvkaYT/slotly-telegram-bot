@@ -41,9 +41,9 @@ export function parseAccountAction(data: string | undefined) {
 
 export function parseBookingAction(data: string | undefined) {
   if (!data) return null;
-  const match = /^booking:(confirm|cancel):([A-Za-z0-9-]{8,})$/.exec(data);
+  const match = /^booking:(confirm|cancel|cancel-ask):([A-Za-z0-9-]{8,})$/.exec(data);
   if (!match) return null;
-  return { action: match[1] as "confirm" | "cancel", bookingId: match[2] };
+  return { action: match[1] as "confirm" | "cancel" | "cancel-ask", bookingId: match[2] };
 }
 
 export function parseMenuAction(data: string | undefined) {

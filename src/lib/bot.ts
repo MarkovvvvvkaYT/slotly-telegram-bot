@@ -42,8 +42,8 @@ function mainMenu() {
 
 function bookingKeyboard(booking: BookingRow) {
   if (booking.status === "cancelled") return new InlineKeyboard().text("Вернуть", `booking:confirm:${booking.id}`);
-  if (booking.status === "confirmed") return new InlineKeyboard().text("Отменить", `booking:cancel:${booking.id}`);
-  return new InlineKeyboard().text("Подтвердить", `booking:confirm:${booking.id}`).text("Отменить", `booking:cancel:${booking.id}`);
+  if (booking.status === "confirmed") return new InlineKeyboard().text("Отменить", `booking:cancel-ask:${booking.id}`);
+  return new InlineKeyboard().text("Подтвердить", `booking:confirm:${booking.id}`).text("Отменить", `booking:cancel-ask:${booking.id}`);
 }
 
 function contextKeyboard() {
@@ -186,7 +186,7 @@ async function sendStats(ctx: Context) {
   if (error) return ctx.reply("Не удалось загрузить статистику.", { reply_markup: mainMenu() });
   const rows = data ?? [];
   const count = (value: string) => rows.filter((row) => row.status === value).length;
-  await ctx.reply(`Статистика с сегодня\nВсего: ${rows.length}\nНовых: ${count("new")}\nПодтверждено: ${count("confirmed")}\nОтменено: ${count("cancelled")}`, { reply_markup: mainMenu() });
+  await ctx.reply(`Статистика с сегодня\nВсего: ${rows.length}\nНовых: ${count("new")}\nПодтверждено: ${count("confirmed")}\nОтменено: ${count("cancelled")}`, { reply_markup: contextKeyboard() });
 }
 
 async function sendNextBooking(ctx: Context) {
@@ -195,7 +195,7 @@ async function sendNextBooking(ctx: Context) {
   const { data } = await getSupabaseAdmin().from("bookings").select("id,reference,service_name,date,time,client_name,phone,comment,status").eq("profile_id", connection.profile_id).is("deleted_at", null).neq("status", "cancelled").gte("date", dateKey()).order("date").order("time").limit(1).maybeSingle();
   if (!data) return ctx.reply("Ближайших записей нет.", { reply_markup: contextKeyboard() });
   const booking = { ...(data as BookingRow), time: String(data.time).slice(0, 5) };
-  await ctx.reply(`Следующая запись\n\n${formatBookingDetails(booking)}`, { reply_markup: bookingKeyboard(booking) });
+  await ctx.reply(`Следующая запись\n\n${formatBookingDetails(booking)}`, { reply_markup: new InlineKeyboard().text("Отменить запись", `booking:cancel-ask:${booking.id}`).row().text("Назад к меню", "menu:main") });
 }
 
 async function handleBookingAction(ctx: Context, action: "confirm" | "cancel", bookingId: string) {
@@ -221,6 +221,16 @@ async function handleBookingAction(ctx: Context, action: "confirm" | "cancel", b
   await ctx.answerCallbackQuery({ text: status === "confirmed" ? "Заявка подтверждена" : "Заявка отменена" });
   const booking = { ...(data as BookingRow), time: String(data.time).slice(0, 5) };
   await ctx.editMessageText(formatBookingDetails(booking), { reply_markup: bookingKeyboard(booking) });
+}
+
+async function handleCancelPrompt(ctx: Context, bookingId: string) {
+  const connection = await connectionFor(ctx);
+  if (!connection) return ctx.answerCallbackQuery({ text: "Telegram не подключён", show_alert: true });
+  const { data } = await getSupabaseAdmin().from("bookings").select("id,reference,service_name,date,time,client_name,phone,comment,status").eq("id", bookingId).eq("profile_id", connection.profile_id).is("deleted_at", null).maybeSingle();
+  if (!data) return ctx.answerCallbackQuery({ text: "Заявка уже изменена или не найдена", show_alert: true });
+  await ctx.answerCallbackQuery();
+  const booking = { ...(data as BookingRow), time: String(data.time).slice(0, 5) };
+  await ctx.editMessageText(`${formatBookingDetails(booking)}\n\nТочно отменить заявку?`, { reply_markup: new InlineKeyboard().text("Да, отменить", `booking:cancel:${booking.id}`).text("Назад", booking.status === "new" ? `booking:confirm:${booking.id}` : "menu:main") });
 }
 
 async function handleAccountAction(ctx: Context, action: "approve" | "cancel", challengeId: string) {
@@ -287,6 +297,7 @@ function registerHandlers(bot: Bot<Context>) {
     }
     const parsed = parseBookingAction(ctx.callbackQuery.data);
     if (!parsed) return ctx.answerCallbackQuery({ text: "Неизвестное действие", show_alert: true });
+    if (parsed.action === "cancel-ask") return handleCancelPrompt(ctx, parsed.bookingId);
     await handleBookingAction(ctx, parsed.action, parsed.bookingId);
   });
 }
