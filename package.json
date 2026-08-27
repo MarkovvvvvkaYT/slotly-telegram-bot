@@ -1,0 +1,30 @@
+{
+  "name": "slotly-telegram-bot",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint",
+    "test": "vitest run",
+    "set-webhook": "node scripts/set-webhook.mjs"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "2.112.4",
+    "grammy": "1.46.0",
+    "next": "16.3.2",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "20.19.0",
+    "@types/react": "19.1.10",
+    "@types/react-dom": "19.1.7",
+    "eslint": "9.39.5",
+    "eslint-config-next": "16.3.2",
+    "typescript": "5.9.3",
+    "vitest": "4.1.11"
+  }
+}
