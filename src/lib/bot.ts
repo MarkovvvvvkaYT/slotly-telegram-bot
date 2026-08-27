@@ -59,7 +59,7 @@ function bookingListKeyboard(bookings: BookingRow[]) {
 
 function formatCompactBooking(booking: BookingRow, index: number) {
   const status = booking.status === "confirmed" ? "подтверждена" : booking.status === "cancelled" ? "отменена" : "новая";
-  return `${index}. ${booking.date.slice(5)} · ${booking.time} — ${booking.service_name}\n   ${booking.client_name} · ${status} · ${booking.reference}`;
+  return `${index + 1}. ${booking.date.slice(5)} · ${booking.time} — ${booking.service_name}\n   ${booking.client_name} · ${status} · ${booking.reference}`;
 }
 
 function contextKeyboard() {
