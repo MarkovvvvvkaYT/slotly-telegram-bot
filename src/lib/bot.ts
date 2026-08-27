@@ -17,6 +17,7 @@ type BookingRow = {
 };
 
 let botInstance: Bot<Context> | null = null;
+let botInitPromise: Promise<unknown> | null = null;
 
 function dateKey(date = new Date()) {
   return date.toISOString().slice(0, 10);
@@ -193,6 +194,12 @@ export async function handleUpdate(update: unknown) {
     if (error?.code === "23505") return { duplicate: true } as const;
     if (error) throw error;
   }
-  await getBot().handleUpdate(update as Parameters<Bot<Context>["handleUpdate"]>[0]);
+  const bot = getBot();
+  botInitPromise ??= bot.init().catch((error) => {
+    botInitPromise = null;
+    throw error;
+  });
+  await botInitPromise;
+  await bot.handleUpdate(update as Parameters<Bot<Context>["handleUpdate"]>[0]);
   return { duplicate: false } as const;
 }
