@@ -35,6 +35,7 @@ describe("Telegram bot payloads", () => {
   it("parses booking actions without accepting malformed callback data", () => {
     expect(parseBookingAction("booking:confirm:booking-1")).toEqual({ action: "confirm", bookingId: "booking-1" });
     expect(parseBookingAction("booking:cancel:booking-1")).toEqual({ action: "cancel", bookingId: "booking-1" });
+    expect(parseBookingAction("booking:cancel-ask:booking-1")).toEqual({ action: "cancel-ask", bookingId: "booking-1" });
     expect(parseBookingAction("booking:confirm:")).toBeNull();
     expect(parseBookingAction("other:confirm:booking-1")).toBeNull();
   });
