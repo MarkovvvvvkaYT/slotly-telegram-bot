@@ -1,4 +1,4 @@
-import { Bot, Context, InlineKeyboard } from "grammy";
+import { Bot, Context, InlineKeyboard, Keyboard } from "grammy";
 import { getSupabaseAdmin } from "./supabase";
 import { hashChallengeToken, isChallengeExpired } from "./telegram-challenges";
 import { parseAccountAction, parseBookingAction, parseStartPayload, telegramUpdateId } from "./telegram-text";
@@ -29,12 +29,26 @@ function addDays(date: Date, days: number) {
   return result;
 }
 
-function formatBookingList(rows: BookingRow[]) {
-  if (!rows.length) return "Записей нет.";
-  return rows.map((booking) => {
-    const status = booking.status === "confirmed" ? "подтверждена" : booking.status === "cancelled" ? "отменена" : "новая";
-    return `${booking.date} ${booking.time} · ${booking.service_name}\n${booking.client_name} · ${booking.phone}\nСтатус: ${status} · #${booking.reference}`;
-  }).join("\n\n");
+function mainMenu() {
+  return new Keyboard()
+    .text("Сегодня").text("Неделя").row()
+    .text("Новые").text("Подтверждённые").row()
+    .text("Все записи").text("Отменённые").row()
+    .text("Следующая запись").text("Статистика").row()
+    .text("Профиль").text("Помощь")
+    .resized()
+    .persistent();
+}
+
+function bookingKeyboard(booking: BookingRow) {
+  if (booking.status === "cancelled") return new InlineKeyboard().text("Вернуть", `booking:confirm:${booking.id}`);
+  if (booking.status === "confirmed") return new InlineKeyboard().text("Отменить", `booking:cancel:${booking.id}`);
+  return new InlineKeyboard().text("Подтвердить", `booking:confirm:${booking.id}`).text("Отменить", `booking:cancel:${booking.id}`);
+}
+
+function formatBookingDetails(booking: BookingRow) {
+  const status = booking.status === "confirmed" ? "Подтверждена" : booking.status === "cancelled" ? "Отменена" : "Новая";
+  return `${booking.date} · ${booking.time}\n${booking.service_name}\nКлиент: ${booking.client_name}\nТелефон: ${booking.phone}${booking.comment ? `\nКомментарий: ${booking.comment}` : ""}\nСтатус: ${status}\nНомер: ${booking.reference}`;
 }
 
 async function connectionFor(ctx: Context) {
@@ -150,7 +164,29 @@ async function listBookings(ctx: Context, days: number, status?: "new" | "confir
     await ctx.reply("Не удалось загрузить записи.");
     return;
   }
-  await ctx.reply(formatBookingList((data ?? []) as BookingRow[]));
+  const rows = (data ?? []) as BookingRow[];
+  if (!rows.length) { await ctx.reply("Записей нет.", { reply_markup: mainMenu() }); return; }
+  await ctx.reply(`Записи: ${rows.length}. Нажмите кнопку под заявкой для изменения статуса.`, { reply_markup: mainMenu() });
+  for (const booking of rows) await ctx.reply(formatBookingDetails(booking), { reply_markup: bookingKeyboard(booking) });
+}
+
+async function sendStats(ctx: Context) {
+  const connection = await connectionFor(ctx);
+  if (!connection) return ctx.reply("Сначала подключите Telegram в профиле специалиста Slotly.", { reply_markup: mainMenu() });
+  const { data, error } = await getSupabaseAdmin().from("bookings").select("status,date").eq("profile_id", connection.profile_id).is("deleted_at", null).gte("date", dateKey());
+  if (error) return ctx.reply("Не удалось загрузить статистику.", { reply_markup: mainMenu() });
+  const rows = data ?? [];
+  const count = (value: string) => rows.filter((row) => row.status === value).length;
+  await ctx.reply(`Статистика с сегодня\nВсего: ${rows.length}\nНовых: ${count("new")}\nПодтверждено: ${count("confirmed")}\nОтменено: ${count("cancelled")}`, { reply_markup: mainMenu() });
+}
+
+async function sendNextBooking(ctx: Context) {
+  const connection = await connectionFor(ctx);
+  if (!connection) return ctx.reply("Сначала подключите Telegram в профиле специалиста Slotly.", { reply_markup: mainMenu() });
+  const { data } = await getSupabaseAdmin().from("bookings").select("id,reference,service_name,date,time,client_name,phone,comment,status").eq("profile_id", connection.profile_id).is("deleted_at", null).neq("status", "cancelled").gte("date", dateKey()).order("date").order("time").limit(1).maybeSingle();
+  if (!data) return ctx.reply("Ближайших записей нет.", { reply_markup: mainMenu() });
+  const booking = data as BookingRow;
+  await ctx.reply(`Следующая запись\n\n${formatBookingDetails(booking)}`, { reply_markup: bookingKeyboard(booking) });
 }
 
 async function handleBookingAction(ctx: Context, action: "confirm" | "cancel", bookingId: string) {
@@ -174,6 +210,7 @@ async function handleBookingAction(ctx: Context, action: "confirm" | "cancel", b
     return;
   }
   await ctx.answerCallbackQuery({ text: status === "confirmed" ? "Заявка подтверждена" : "Заявка отменена" });
+  await ctx.editMessageReplyMarkup({ reply_markup: bookingKeyboard({ id: bookingId, reference: "", service_name: "", date: "", time: "", client_name: "", phone: "", comment: null, status }) });
   await ctx.reply(status === "confirmed" ? "Заявка подтверждена." : "Заявка отменена.");
 }
 
@@ -198,14 +235,29 @@ async function sendProfile(ctx: Context) {
 }
 
 function registerHandlers(bot: Bot<Context>) {
-  bot.command("start", (ctx) => sendStart(ctx, ctx.match));
+  bot.command("start", async (ctx) => { await sendStart(ctx, ctx.match); await ctx.reply("Меню специалиста открыто.", { reply_markup: mainMenu() }); });
   bot.command("today", (ctx) => listBookings(ctx, 1));
   bot.command("week", (ctx) => listBookings(ctx, 7));
   bot.command("upcoming", (ctx) => listBookings(ctx, 30));
   bot.command("new", (ctx) => listBookings(ctx, 30, "new"));
   bot.command("confirmed", (ctx) => listBookings(ctx, 30, "confirmed"));
+  bot.command("cancelled", (ctx) => listBookings(ctx, 30, "cancelled"));
+  bot.command("all", (ctx) => listBookings(ctx, 30));
+  bot.command("next", sendNextBooking);
+  bot.command("stats", sendStats);
+  bot.command("menu", (ctx) => ctx.reply("Выберите действие:", { reply_markup: mainMenu() }));
   bot.command("profile", sendProfile);
-  bot.command("help", (ctx) => ctx.reply("Команды Slotly:\n/today — записи сегодня\n/week — ближайшие 7 дней\n/upcoming — ближайшие 30 дней\n/new — новые заявки\n/confirmed — подтверждённые\n/profile — ссылка и статус профиля\n/status — подключение Telegram"));
+  bot.command("help", (ctx) => ctx.reply("Меню работает кнопками или командами:\nСегодня, Неделя, Новые, Подтверждённые, Все записи, Отменённые\nСледующая запись, Статистика, Профиль\nКоманды: /today /week /upcoming /new /confirmed /cancelled /all /next /stats /profile /status", { reply_markup: mainMenu() }));
+  bot.hears("Сегодня", (ctx) => listBookings(ctx, 1));
+  bot.hears("Неделя", (ctx) => listBookings(ctx, 7));
+  bot.hears("Новые", (ctx) => listBookings(ctx, 30, "new"));
+  bot.hears("Подтверждённые", (ctx) => listBookings(ctx, 30, "confirmed"));
+  bot.hears("Все записи", (ctx) => listBookings(ctx, 30));
+  bot.hears("Отменённые", (ctx) => listBookings(ctx, 30, "cancelled"));
+  bot.hears("Следующая запись", sendNextBooking);
+  bot.hears("Статистика", sendStats);
+  bot.hears("Профиль", sendProfile);
+  bot.hears("Помощь", (ctx) => ctx.reply("Выберите кнопку меню или используйте /help.", { reply_markup: mainMenu() }));
   bot.command("status", async (ctx) => {
     const connection = await connectionFor(ctx);
     await ctx.reply(connection ? "Telegram подключён к Slotly." : "Telegram не подключён.");
