@@ -50,8 +50,9 @@ function contextKeyboard() {
   return new InlineKeyboard()
     .text("Сегодня", "menu:today").text("Неделя", "menu:week").row()
     .text("Новые", "menu:new").text("Подтверждённые", "menu:confirmed").row()
-    .text("Все записи", "menu:all").text("Статистика", "menu:stats").row()
-    .text("Главное меню", "menu:main");
+    .text("Все записи", "menu:all").text("Отменённые", "menu:cancelled").row()
+    .text("Ближайшая", "menu:next").text("Статистика", "menu:stats").row()
+    .text("Профиль", "menu:profile").text("Главное меню", "menu:main");
 }
 
 function formatBookingDetails(booking: BookingRow) {
@@ -264,7 +265,7 @@ function registerHandlers(bot: Bot<Context>) {
   bot.command("all", (ctx) => listBookings(ctx, 30));
   bot.command("next", sendNextBooking);
   bot.command("stats", sendStats);
-  bot.command("menu", (ctx) => ctx.reply("Выберите действие:", { reply_markup: mainMenu() }));
+  bot.command("menu", (ctx) => ctx.reply("Выберите раздел — быстрые действия всегда под рукой:", { reply_markup: contextKeyboard() }));
   bot.command("profile", sendProfile);
   bot.command("help", (ctx) => ctx.reply("Меню работает кнопками или командами:\nСегодня, Неделя, Новые, Подтверждённые, Все записи, Отменённые\nСледующая запись, Статистика, Профиль\nКоманды: /today /week /upcoming /new /confirmed /cancelled /all /next /stats /profile /status", { reply_markup: mainMenu() }));
   bot.hears("Сегодня", (ctx) => listBookings(ctx, 1));
@@ -287,7 +288,7 @@ function registerHandlers(bot: Bot<Context>) {
     const menuAction = parseMenuAction(ctx.callbackQuery.data);
     if (menuAction) {
       await ctx.answerCallbackQuery();
-      if (menuAction.view === "main") return ctx.reply("Выберите действие:", { reply_markup: mainMenu() });
+      if (menuAction.view === "main") return ctx.reply("Выберите раздел — быстрые действия всегда под рукой:", { reply_markup: contextKeyboard() });
       if (menuAction.view === "stats") return sendStats(ctx);
       if (menuAction.view === "next") return sendNextBooking(ctx);
       if (menuAction.view === "profile") return sendProfile(ctx);
