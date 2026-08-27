@@ -63,7 +63,7 @@ export async function sendBookingEvent(api: BotApi, event: TelegramEvent) {
   }
 
   const keyboard = event.eventType === "booking.created" && event.booking.status === "new"
-    ? new InlineKeyboard().text("Подтвердить", `booking:confirm:${event.booking.id}`).text("Отменить", `booking:cancel:${event.booking.id}`)
+    ? new InlineKeyboard().text("Подтвердить", `booking:confirm:${event.booking.id}`).text("Отменить", `booking:cancel-ask:${event.booking.id}`)
     : undefined;
   try {
     await api.sendMessage(Number(connection.chat_id), formatBookingMessage(event.eventType, event.booking), keyboard ? { reply_markup: keyboard } : undefined);
