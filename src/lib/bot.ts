@@ -230,7 +230,7 @@ async function handleCancelPrompt(ctx: Context, bookingId: string) {
   if (!data) return ctx.answerCallbackQuery({ text: "Заявка уже изменена или не найдена", show_alert: true });
   await ctx.answerCallbackQuery();
   const booking = { ...(data as BookingRow), time: String(data.time).slice(0, 5) };
-  await ctx.editMessageText(`${formatBookingDetails(booking)}\n\nТочно отменить заявку?`, { reply_markup: new InlineKeyboard().text("Да, отменить", `booking:cancel:${booking.id}`).text("Назад", booking.status === "new" ? `booking:confirm:${booking.id}` : "menu:main") });
+  await ctx.editMessageText(`${formatBookingDetails(booking)}\n\nТочно отменить заявку?`, { reply_markup: new InlineKeyboard().text("Да, отменить", `booking:cancel:${booking.id}`).text("Назад", "menu:main") });
 }
 
 async function handleAccountAction(ctx: Context, action: "approve" | "cancel", challengeId: string) {
